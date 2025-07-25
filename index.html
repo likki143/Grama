@@ -631,7 +631,7 @@
         async function sendBulkPendingUpdates() {
             if (!currentUser || currentUser.role !== 'admin') return; // Admin guard
 
-            const usersWithPending = {};
+            let usersWithPending = {};
 
             // Aggregate users with at least one pending issue
             Object.values(issues).forEach(issue => {
@@ -640,7 +640,7 @@
                 }
             });
 
-            const users = Object.keys(usersWithPending);
+            let users = Object.keys(usersWithPending);
 
             if (!users.length) {
                 showNotification("No users with pending issues to send updates.", "info");
@@ -651,8 +651,8 @@
             let failedCount = 0;
 
             // Loop over users and send personalized emails
-            for (const email of users) {
-                const pendingIssuesForUser = Object.entries(issues)
+            for (let email of users) {
+                let pendingIssuesForUser = Object.entries(issues)
                     .filter(([_, issue]) => issue.status === 'pending' && issue.reportedBy === email)
                     .map(([id, issue]) => `• ${issue.title} (#${id})`).join('\n');
 
@@ -678,7 +678,7 @@
                 }
             }
 
-            const message = `Bulk update emails sent. Success: ${sentCount}, Failed: ${failedCount}`;
+            let message = `Bulk update emails sent. Success: ${sentCount}, Failed: ${failedCount}`;
             showNotification(message, failedCount === 0 ? 'success' : 'error');
         }
 
