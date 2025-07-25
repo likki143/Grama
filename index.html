@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GramaAlert - Village Issue Reporter</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getDatabase, ref, push, set, onValue, update } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyAE1ZW1yDjkcXQqv5Lv7RJCXAk7FMJJY7c",
+            authDomain: "gramaalert.firebaseapp.com",
+            databaseURL: "https://gramaalert-default-rtdb.firebaseio.com/",
+            projectId: "gramaalert",
+            storageBucket: "gramaalert.firebasestorage.app",
+            messagingSenderId: "304218727115",
+            appId: "1:304218727115:web:5d0ee312d106e73277314e",
+            measurementId: "G-K4GZ0TWL8V"
+        };
+        
+        window.firebaseApp = initializeApp(firebaseConfig);
+        window.auth = getAuth();
+        window.database = getDatabase();
+        window.storage = getStorage();
+        window.firebaseRefs = { ref, push, set, onValue, update, storageRef, uploadBytes, getDownloadURL };
+        window.firebaseAuth = { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification };
+    </script>
+    
+    <!-- EmailJS -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    
+    <style>
+        .hidden { display: none; }
+        .issue-card {
+            transition: all 0.3s ease;
+        }
+        .issue-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .status-pending { background-color: #fef3c7; color: #92400e; }
+        .status-in-progress { background-color: #dbeafe; color: #1e40af; }
+        .status-resolved { background-color: #dcfce7; color: #166534; }
+        .nav-item.active {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .verification-notice {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Email Verification Notice -->
+    <div id="verificationNotice" class="verification-notice hidden">
+        <i class="fas fa-envelope mr-2"></i>
+        Please verify your email address to access all features. Check your inbox for the verification link.
+        <button id="resendVerification" class="ml-4 underline hover:no-underline">Resend Email</button>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="bg-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-village text-2xl text-blue-600 mr-2"></i>
+                    <span class="text-xl font-bold text-gray-900">GramaAlert</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="dashboardBtn" class="nav-item px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900">
+                        <i class="fas fa-tachometer-alt mr-1"></i>Dashboard
+                    </button>
+                    <button id="reportBtn" class="nav-item px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900">
+                        <i class="fas fa-exclamation-circle mr-1"></i>Report Issue
+                    </button>
+                    <button id="adminBtn" class="nav-item px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hidden">
+                        <i class="fas fa-user-shield mr-1"></i>Admin
+                    </button>
+                    <button id="loginBtn" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
+                        <i class="fas fa-sign-in-alt mr-1"></i>Login
+                    </button>
+                    <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 hidden">
+                        <i class="fas fa-sign-out-alt mr-1"></i>Logout
+                    </button>
+                    <span id="userEmail" class="text-sm text-gray-600 hidden"></span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Login/Register Modal -->
+        <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 id="authTitle" class="text-2xl font-bold text-gray-900">Login</h2>
+                    <button id="closeAuthModal" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <form id="authForm">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <input type="email" id="authEmail" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                        <input type="password" id="authPassword" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required minlength="6">
+                    </div>
+                    <div id="roleSelection" class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                        <select id="authRole" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="citizen">Citizen</option>
+                            <option value="admin">Admin (Panchayat Officer)</option>
+                        </select>
+                        <div id="adminCodeDiv" class="mt-2 hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Admin Code</label>
+                            <input type="text" id="adminCode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter admin access code">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 mb-3" id="authSubmitBtn">
+                        <span id="authSubmitText">Login</span>
+                        <div class="loading ml-2 hidden" id="authLoading"></div>
+                    </button>
+                    <p class="text-center text-sm text-gray-600">
+                        <span id="authSwitchText">Don't have an account?</span>
+                        <button type="button" id="authSwitch" class="text-blue-600 hover:text-blue-800">Register</button>
+                    </p>
+                </form>
+                <div id="authError" class="mt-3 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm hidden"></div>
+                <div id="authSuccess" class="mt-3 p-3 bg-green-50 border border-green-200 rounded-md text-green-700 text-sm hidden"></div>
+            </div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboardView" class="view">
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Village Issues Dashboard</h1>
+                <p class="text-gray-600">Track and monitor reported issues in your village</p>
+            </div>
+
+            <!-- Filters -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex flex-wrap gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
+                        <select id="statusFilter" class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Filter by Category</label>
+                        <select id="categoryFilter" class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="all">All Categories</option>
+                            <option value="water">Water</option>
+                            <option value="road">Road</option>
+                            <option value="electricity">Electricity</option>
+                            <option value="garbage">Garbage</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="clearFilters" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                            <i class="fas fa-redo mr-1"></i>Clear Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Total Issues</p>
+                            <p id="totalIssues" class="text-2xl font-bold text-gray-900">0</p>
+                        </div>
+                        <div class="p-3 bg-blue-100 rounded-full">
+                            <i class="fas fa-exclamation-circle text-blue-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Pending</p>
+                            <p id="pendingIssues" class="text-2xl font-bold text-yellow-600">0</p>
+                        </div>
+                        <div class="p-3 bg-yellow-100 rounded-full">
+                            <i class="fas fa-clock text-yellow-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">In Progress</p>
+                            <p id="inProgressIssues" class="text-2xl font-bold text-blue-600">0</p>
+                        </div>
+                        <div class="p-3 bg-blue-100 rounded-full">
+                            <i class="fas fa-spinner text-blue-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Resolved</p>
+                            <p id="resolvedIssues" class="text-2xl font-bold text-green-600">0</p>
+                        </div>
+                        <div class="p-3 bg-green-100 rounded-full">
+                            <i class="fas fa-check-circle text-green-600"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issues List -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Recent Issues</h2>
+                <div id="issuesList" class="space-y-4">
+                    <div class="text-center py-4">
+                        <div class="loading mx-auto mb-2"></div>
+                        <p class="text-gray-500">Loading issues...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Issue View -->
+        <div id="reportView" class="view hidden">
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Report an Issue</h1>
+                <p class="text-gray-600">Help improve your village by reporting issues</p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <form id="issueForm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Issue Title *</label>
+                            <input type="text" id="issueTitle" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Street Light Not Working" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                            <select id="issueCategory" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Auto-categorize (AI)</option>
+                                <option value="water">Water Supply</option>
+                                <option value="road">Road & Transportation</option>
+                                <option value="electricity">Electricity</option>
+                                <option value="garbage">Garbage Collection</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Detailed Description *</label>
+                        <textarea id="issueDescription" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Please provide detailed information about the issue..." required></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                            <input type="text" id="issueLocation" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Main Street, Near Temple">
+                            <button type="button" id="getLocationBtn" class="mt-2 text-sm text-blue-600 hover:text-blue-800">
+                                <i class="fas fa-map-marker-alt mr-1"></i>Use Current Location
+                            </button>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image</label>
+                            <input type="file" id="issueImage" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <div id="aiSummary" class="bg-blue-50 p-4 rounded-md hidden">
+                            <h3 class="font-medium text-blue-900 mb-2">AI Analysis:</h3>
+                            <p id="aiSummaryText" class="text-blue-800"></p>
+                            <p class="text-sm text-blue-700 mt-1">Suggested Category: <span id="aiCategory" class="font-medium"></span></p>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 flex justify-end">
+                        <button type="button" id="analyzeBtn" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 mr-3">
+                            <i class="fas fa-robot mr-1"></i>Analyze with AI
+                        </button>
+                        <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700" id="submitIssueBtn">
+                            <i class="fas fa-paper-plane mr-1"></i>Submit Issue
+                            <div class="loading ml-2 hidden" id="submitLoading"></div>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Admin View -->
+        <div id="adminView" class="view hidden">
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+                <p class="text-gray-600">Manage and resolve village issues</p>
+            </div>
+
+            <!-- Admin Statistics -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <canvas id="statusChart" style="height: 200px;"></canvas>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <canvas id="categoryChart" style="height: 200px;"></canvas>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
+                    <div class="space-y-2">
+                        <button id="exportBtn" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">
+                            <i class="fas fa-download mr-2"></i>Export Report
+                        </button>
+                        <button id="sendUpdatesBtn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">
+                            <i class="fas fa-bell mr-2"></i>Send Updates
+                        </button>
+                        <button id="analyticsBtn" class="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700">
+                            <i class="fas fa-chart-bar mr-2"></i>Analytics
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Issues Management -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Manage Issues</h2>
+                <div id="adminIssuesList" class="space-y-4">
+                    <div class="text-center py-4">
+                        <div class="loading mx-auto mb-2"></div>
+                        <p class="text-gray-500">Loading issues...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Issue Update Modal -->
+        <div id="updateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-900">Update Issue</h2>
+                    <button id="closeUpdateModal" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <form id="updateForm">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select id="updateStatus" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="pending">Pending</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Resolution Note</label>
+                        <textarea id="updateNote" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Add a note about the resolution..."></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <button type="button" id="generateMessageBtn" class="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 mb-3">
+                            <i class="fas fa-robot mr-2"></i>Generate AI Message
+                        </button>
+                        <div id="aiMessage" class="bg-purple-50 p-3 rounded-md hidden">
+                            <p id="aiMessageText" class="text-purple-800"></p>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700" id="updateIssueBtn">
+                        Update Issue
+                        <div class="loading ml-2 hidden" id="updateLoading"></div>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentUser = null;
+        let issues = {};
+        let currentView = 'dashboard';
+        let isLogin = true;
+        let currentIssueId = null;
+        let statusChart = null;
+        let categoryChart = null;
+
+        // EmailJS Configuration - Replace with your EmailJS credentials
+        const EMAILJS_CONFIG = {
+            SERVICE_ID: 'service_cnntsz7',
+            TEMPLATE_ID: 'template_1fztfaf',
+            PUBLIC_KEY: 'NKsb5epQ8oZsSh-wE'
+        };
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize EmailJS
+            emailjs.init(EMAILJS_CONFIG.PUBLIC_KEY);
+            
+            // Wait for Firebase to load
+            setTimeout(() => {
+                if (window.auth && window.database) {
+                    initializeApp();
+                    setupEventListeners();
+                    showView('dashboard');
+                } else {
+                    showNotification('Firebase not loaded. Please check your configuration.', 'error');
+                }
+            }, 1000);
+        });
+
+        function initializeApp() {
+            // Listen for authentication state changes with email verification
+            window.firebaseAuth.onAuthStateChanged(window.auth, (user) => {
+                if (user) {
+                    if (user.emailVerified) {
+                        // User is logged in and email is verified
+                        currentUser = user;
+                        loadUserData();
+                        updateUIForLoggedInUser();
+                        hideVerificationNotice();
+                    } else {
+                        // User is logged in but email is not verified
+                        currentUser = user;
+                        showVerificationNotice();
+                        updateUIForUnverifiedUser();
+                    }
+                } else {
+                    currentUser = null;
+                    updateUIForLoggedOutUser();
+                    hideVerificationNotice();
+                }
+                loadIssues();
+            });
+        }
+
+        function showVerificationNotice() {
+            document.getElementById('verificationNotice').classList.remove('hidden');
+        }
+
+        function hideVerificationNotice() {
+            document.getElementById('verificationNotice').classList.add('hidden');
+        }
+
+        function updateUIForUnverifiedUser() {
+            document.getElementById('loginBtn').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('adminBtn').classList.add('hidden');
+            document.getElementById('userEmail').textContent = currentUser.email + ' (Unverified)';
+            document.getElementById('userEmail').classList.remove('hidden');
+        }
+
+        function loadUserData() {
+            // Load user role from Firebase
+            const { ref, onValue } = window.firebaseRefs;
+            const userRef = ref(window.database, 'users/' + currentUser.uid);
+            onValue(userRef, (snapshot) => {
+                const userData = snapshot.val();
+                if (userData && userData.role) {
+                    currentUser.role = userData.role;
+                    document.getElementById('userEmail').textContent = currentUser.email;
+                    document.getElementById('userEmail').classList.remove('hidden');
+                    
+                    if (currentUser.role === 'admin' && currentUser.emailVerified) {
+                        document.getElementById('adminBtn').classList.remove('hidden');
+                    }
+                }
+            });
+        }
+
+        function loadIssues() {
+            const { ref, onValue } = window.firebaseRefs;
+            const issuesRef = ref(window.database, 'issues');
+            onValue(issuesRef, (snapshot) => {
+                issues = snapshot.val() || {};
+                updateStatistics();
+                displayIssues();
+                if (currentView === 'admin') {
+                    displayAdminIssues();
+                    createCharts();
+                }
+            });
+        }
+
+        function setupEventListeners() {
+            // Navigation
+            document.getElementById('dashboardBtn').addEventListener('click', () => showView('dashboard'));
+            document.getElementById('reportBtn').addEventListener('click', () => showView('report'));
+            document.getElementById('adminBtn').addEventListener('click', () => showView('admin'));
+            document.getElementById('loginBtn').addEventListener('click', () => showAuthModal());
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+
+            // Resend verification email
+            document.getElementById('resendVerification').addEventListener('click', resendVerificationEmail);
+
+            // Auth modal
+            document.getElementById('closeAuthModal').addEventListener('click', hideAuthModal);
+            document.getElementById('authSwitch').addEventListener('click', switchAuthMode);
+            document.getElementById('authForm').addEventListener('submit', handleAuth);
+            document.getElementById('authRole').addEventListener('change', toggleAdminCode);
+
+            // Issue form
+            document.getElementById('issueForm').addEventListener('submit', handleIssueSubmit);
+            document.getElementById('analyzeBtn').addEventListener('click', analyzeIssue);
+            document.getElementById('getLocationBtn').addEventListener('click', getCurrentLocation);
+
+            // Filters
+            document.getElementById('statusFilter').addEventListener('change', filterIssues);
+            document.getElementById('categoryFilter').addEventListener('change', filterIssues);
+            document.getElementById('clearFilters').addEventListener('click', clearFilters);
+
+            // Update modal
+            document.getElementById('closeUpdateModal').addEventListener('click', hideUpdateModal);
+            document.getElementById('updateForm').addEventListener('submit', handleUpdateSubmit);
+            document.getElementById('generateMessageBtn').addEventListener('click', generateAIMessage);
+
+            // Click outside modal to close
+            document.getElementById('authModal').addEventListener('click', function(e) {
+                if (e.target === this) hideAuthModal();
+            });
+            document.getElementById('updateModal').addEventListener('click', function(e) {
+                if (e.target === this) hideUpdateModal();
+            });
+        }
+
+        async function resendVerificationEmail() {
+            if (currentUser && !currentUser.emailVerified) {
+                try {
+                    await window.firebaseAuth.sendEmailVerification(currentUser);
+                    showNotification('Verification email sent! Please check your inbox.', 'success');
+                } catch (error) {
+                    showNotification('Error sending verification email: ' + error.message, 'error');
+                }
+            }
+        }
+
+        function showView(viewName) {
+            // Check authentication for report and admin views
+            if (!currentUser && (viewName === 'report' || viewName === 'admin')) {
+                showNotification('Please login to access this feature', 'error');
+                showAuthModal();
+                return;
+            }
+
+            // Check email verification for report and admin views
+            if (currentUser && !currentUser.emailVerified && (viewName === 'report' || viewName === 'admin')) {
+                showNotification('Please verify your email address to access this feature', 'error');
+                showView('dashboard');
+                return;
+            }
+
+            if (viewName === 'admin' && (!currentUser || currentUser.role !== 'admin' || !currentUser.emailVerified)) {
+                showNotification('Admin access required with verified email', 'error');
+                showView('dashboard');
+                return;
+            }
+
+            // Hide all views
+            document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+            
+            // Show selected view
+            document.getElementById(viewName + 'View').classList.remove('hidden');
+            
+            // Update navigation
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            document.getElementById(viewName + 'Btn').classList.add('active');
+            
+            currentView = viewName;
+            
+            // Load view-specific data
+            if (viewName === 'dashboard') {
+                loadDashboard();
+            } else if (viewName === 'admin') {
+                loadAdminDashboard();
+            }
+        }
+
+        function showAuthModal() {
+            document.getElementById('authModal').classList.remove('hidden');
+            document.getElementById('authError').classList.add('hidden');
+            document.getElementById('authSuccess').classList.add('hidden');
+        }
+
+        function hideAuthModal() {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('authError').classList.add('hidden');
+            document.getElementById('authSuccess').classList.add('hidden');
+        }
+
+        function toggleAdminCode() {
+            const role = document.getElementById('authRole').value;
+            const adminCodeDiv = document.getElementById('adminCodeDiv');
+            
+            if (role === 'admin' && !isLogin) {
+                adminCodeDiv.classList.remove('hidden');
+            } else {
+                adminCodeDiv.classList.add('hidden');
+            }
+        }
+
+        function switchAuthMode() {
+            isLogin = !isLogin;
+            const title = document.getElementById('authTitle');
+            const submitText = document.getElementById('authSubmitText');
+            const switchText = document.getElementById('authSwitchText');
+            const switchBtn = document.getElementById('authSwitch');
+            const roleSelection = document.getElementById('roleSelection');
+            
+            if (isLogin) {
+                title.textContent = 'Login';
+                submitText.textContent = 'Login';
+                switchText.textContent = "Don't have an account?";
+                switchBtn.textContent = 'Register';
+                roleSelection.classList.add('hidden');
+            } else {
+                title.textContent = 'Register';
+                submitText.textContent = 'Register';
+                switchText.textContent = 'Already have an account?';
+                switchBtn.textContent = 'Login';
+                roleSelection.classList.remove('hidden');
+            }
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+            const role = document.getElementById('authRole').value;
+            const adminCode = document.getElementById('adminCode').value;
+
+            // Show loading
+            document.getElementById('authLoading').classList.remove('hidden');
+            document.getElementById('authSubmitBtn').disabled = true;
+            document.getElementById('authError').classList.add('hidden');
+            document.getElementById('authSuccess').classList.add('hidden');
+
+            try {
+                if (isLogin) {
+                    // Login
+                    const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(window.auth, email, password);
+                    const user = userCredential.user;
+                    
+                    if (user.emailVerified) {
+                        showNotification('Logged in successfully!', 'success');
+                        hideAuthModal();
+                    } else {
+                        // Show success message but keep modal open for verification instructions
+                        document.getElementById('authSuccess').textContent = 'Login successful! Please verify your email address to access all features. Check your inbox for the verification link.';
+                        document.getElementById('authSuccess').classList.remove('hidden');
+                        
+                        // Add button to resend verification email
+                        const resendBtn = document.createElement('button');
+                        resendBtn.type = 'button';
+                        resendBtn.className = 'mt-2 text-sm text-blue-600 hover:text-blue-800 underline';
+                        resendBtn.textContent = 'Resend verification email';
+                        resendBtn.onclick = async () => {
+                            try {
+                                await window.firebaseAuth.sendEmailVerification(user);
+                                showNotification('Verification email sent!', 'success');
+                            } catch (error) {
+                                showNotification('Error sending email: ' + error.message, 'error');
+                            }
+                        };
+                        
+                        const successDiv = document.getElementById('authSuccess');
+                        if (!successDiv.querySelector('button')) {
+                            successDiv.appendChild(resendBtn);
+                        }
+                    }
+                } else {
+                    // Check admin code for admin registration
+                    if (role === 'admin' && adminCode !== 'ADMIN2024') {
+                        throw new Error('Invalid admin access code');
+                    }
+
+                    // Register
+                    const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(window.auth, email, password);
+                    const user = userCredential.user;
+
+                    // Send email verification
+                    await window.firebaseAuth.sendEmailVerification(user);
+                    
+                    // Save user role to database
+                    const { ref, set } = window.firebaseRefs;
+                    await set(ref(window.database, 'users/' + user.uid), {
+                        email: email,
+                        role: role,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    // ------------------------------------------------------------------------------
+                    await window.firebaseAuth.signOut(window.auth);
+                    // ------------------------------------------------------------------------------
+                    
+                    // Show success message with verification instructions
+                    document.getElementById('authSuccess').textContent = 'Account created successfully! Please check your email and click the verification link to complete registration.';
+                    document.getElementById('authSuccess').classList.remove('hidden');
+                    
+                    showNotification('Account created! Please verify your email address.', 'success');
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+                document.getElementById('authError').textContent = error.message;
+                document.getElementById('authError').classList.remove('hidden');
+            } finally {
+                document.getElementById('authLoading').classList.add('hidden');
+                document.getElementById('authSubmitBtn').disabled = false;
+            }
+        }
+
+        async function logout() {
+            try {
+                await window.firebaseAuth.signOut(window.auth);
+                showNotification('Logged out successfully!', 'info');
+                showView('dashboard');
+            } catch (error) {
+                console.error('Logout error:', error);
+                showNotification('Error logging out', 'error');
+            }
+        }
+
+        function updateUIForLoggedInUser() {
+            document.getElementById('loginBtn').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+        }
+
+        function updateUIForLoggedOutUser() {
+            document.getElementById('loginBtn').classList.remove('hidden');
+            document.getElementById('logoutBtn').classList.add('hidden');
+            document.getElementById('adminBtn').classList.add('hidden');
+            document.getElementById('userEmail').classList.add('hidden');
+        }
+
+        async function handleIssueSubmit(e) {
+            e.preventDefault();
+            
+            if (!currentUser) {
+                showNotification('Please login to report an issue', 'error');
+                return;
+            }
+
+            if (!currentUser.emailVerified) {
+                showNotification('Please verify your email address before reporting issues', 'error');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('submitLoading').classList.remove('hidden');
+            document.getElementById('submitIssueBtn').disabled = true;
+            
+            const title = document.getElementById('issueTitle').value;
+            const description = document.getElementById('issueDescription').value;
+            const category = document.getElementById('issueCategory').value;
+            const location = document.getElementById('issueLocation').value;
+            const imageFile = document.getElementById('issueImage').files[0];
+
+            try {
+                let imageUrl = null;
+                
+                // Upload image if provided
+                if (imageFile) {
+                    const { storageRef, uploadBytes, getDownloadURL } = window.firebaseRefs;
+                    const imageRef = storageRef(window.storage, 'issues/' + Date.now() + '_' + imageFile.name);
+                    const snapshot = await uploadBytes(imageRef, imageFile);
+                    imageUrl = await getDownloadURL(snapshot.ref);
+                }
+
+                const newIssue = {
+                    title: title,
+                    description: description,
+                    category: category || getAICategory(description),
+                    location: location,
+                    status: 'pending',
+                    reportedBy: currentUser.email,
+                    reportedByUid: currentUser.uid,
+                    reportedAt: new Date().toISOString(),
+                    imageUrl: imageUrl,
+                    aiSummary: generateAISummary(description),
+                    resolutionNote: null,
+                    updatedAt: new Date().toISOString()
+                };
+
+                // Save to Firebase
+                const { ref, push } = window.firebaseRefs;
+                const issueRef = await push(ref(window.database, 'issues'), newIssue);
+
+                // Send confirmation email
+                await sendIssueSubmissionEmail(currentUser.email, newIssue, issueRef.key);
+
+                // Reset form
+                document.getElementById('issueForm').reset();
+                document.getElementById('aiSummary').classList.add('hidden');
+                
+                showNotification('Issue reported successfully! Confirmation email sent.', 'success');
+                showView('dashboard');
+            } catch (error) {
+                console.error('Error submitting issue:', error);
+                showNotification('Error submitting issue: ' + error.message, 'error');
+            } finally {
+                document.getElementById('submitLoading').classList.add('hidden');
+                document.getElementById('submitIssueBtn').disabled = false;
+            }
+        }
+
+        async function sendIssueSubmissionEmail(userEmail, issue, issueId) {
+            try {
+                let emailParams = {
+                    to_email: userEmail,
+                    user_name: userEmail.split('@')[0],
+                    issue_title: issue.title,
+                    issue_id: issueId,
+                    issue_description: issue.description,
+                    issue_location: issue.location,
+                    issue_category: issue.category,
+                    submit_date: new Date().toLocaleDateString()
+                };
+
+                await emailjs.send(
+                    EMAILJS_CONFIG.SERVICE_ID,
+                    EMAILJS_CONFIG.TEMPLATE_ID,
+                    emailParams,
+                    EMAILJS_CONFIG.PUBLIC_KEY
+                );
+            } catch (error) {
+                console.error('Email sending failed:', error);
+            }
+        }
+
+        async function sendStatusUpdateEmail(userEmail, issue, issueId, oldStatus, newStatus) {
+            try {
+                let emailParams = {
+                    to_email: userEmail || "default@example.com",
+                    user_name: userEmail.split('@')[0] || "User",
+                    issue_title: issue?.title || "No title provided",
+                    issue_id: issueId || "N/A",
+                    old_status: oldStatus || "N/A",
+                    new_status: newStatus || "N/A",
+                    update_date: new Date().toLocaleString() || "N/A",
+                    resolution_note: issue.resolutionNote || "No notes provided",
+                };
+
+                await emailjs.send(
+                    EMAILJS_CONFIG.SERVICE_ID,
+                    'template_ppbuv1y', // You need to create this template
+                    emailParams,
+                    EMAILJS_CONFIG.PUBLIC_KEY
+                );
+            } catch (error) {
+                console.error('Email sending failed:', error);
+            }
+        }
+
+        function analyzeIssue() {
+            const description = document.getElementById('issueDescription').value;
+            
+            if (!description) {
+                showNotification('Please enter a description first', 'error');
+                return;
+            }
+            
+            // Simulate AI analysis
+            const summary = generateAISummary(description);
+            const category = getAICategory(description);
+            
+            document.getElementById('aiSummaryText').textContent = summary;
+            document.getElementById('aiCategory').textContent = category.charAt(0).toUpperCase() + category.slice(1);
+            document.getElementById('aiSummary').classList.remove('hidden');
+            
+            // Auto-fill category if not selected
+            if (!document.getElementById('issueCategory').value) {
+                document.getElementById('issueCategory').value = category;
+            }
+        }
+
+        function generateAISummary(description) {
+            // Enhanced AI simulation
+            const words = description.toLowerCase();
+            let summary = '';
+            
+            if (words.includes('water') || words.includes('supply') || words.includes('pipe')) {
+                summary = 'Water supply disruption reported affecting local infrastructure';
+            } else if (words.includes('road') || words.includes('pothole') || words.includes('street')) {
+                summary = 'Road infrastructure maintenance required for public safety';
+            } else if (words.includes('light') || words.includes('electricity') || words.includes('power')) {
+                summary = 'Electrical infrastructure issue affecting community services';
+            } else if (words.includes('garbage') || words.includes('waste') || words.includes('trash')) {
+                summary = 'Waste management issue requiring municipal attention';
+            } else if (words.includes('drainage') || words.includes('flood') || words.includes('sewer')) {
+                summary = 'Drainage system issue affecting area sanitation';
+            } else {
+                summary = 'Community infrastructure issue reported requiring assessment';
+            }
+            
+            return summary;
+        }
+
+        function getAICategory(description) {
+            const words = description.toLowerCase();
+            
+            if (words.includes('water') || words.includes('supply') || words.includes('pipe') || words.includes('tap')) {
+                return 'water';
+            } else if (words.includes('road') || words.includes('pothole') || words.includes('street') || words.includes('path')) {
+                return 'road';
+            } else if (words.includes('light') || words.includes('electricity') || words.includes('power') || words.includes('wire')) {
+                return 'electricity';
+            } else if (words.includes('garbage') || words.includes('waste') || words.includes('trash') || words.includes('dump')) {
+                return 'garbage';
+            } else {
+                return 'other';
+            }
+        }
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    // Simulate reverse geocoding with Indian village locations
+                    const locations = [
+                        'Main Road, Near Panchayat Office',
+                        'Gandhi Chowk, Market Area',
+                        'Temple Street, Near Hanuman Temple',
+                        'School Road, Near Primary School',
+                        'Bus Stand, Central Area',
+                        'Village Square, Community Center',
+                        'Gurudwara Road, Near Religious Center',
+                        'Hospital Road, Near PHC'
+                    ];
+                    const randomLocation = locations[Math.floor(Math.random() * locations.length)];
+                    document.getElementById('issueLocation').value = randomLocation;
+                    showNotification('Location detected!', 'success');
+                }, function() {
+                    showNotification('Unable to get location. Please enter manually.', 'error');
+                });
+            } else {
+                showNotification('Geolocation not supported by this browser', 'error');
+            }
+        }
+
+        function loadDashboard() {
+            updateStatistics();
+            displayIssues();
+        }
+
+        function updateStatistics() {
+            const issueArray = Object.values(issues);
+            const total = issueArray.length;
+            const pending = issueArray.filter(issue => issue.status === 'pending').length;
+            const inProgress = issueArray.filter(issue => issue.status === 'in-progress').length;
+            const resolved = issueArray.filter(issue => issue.status === 'resolved').length;
+            
+            document.getElementById('totalIssues').textContent = total;
+            document.getElementById('pendingIssues').textContent = pending;
+            document.getElementById('inProgressIssues').textContent = inProgress;
+            document.getElementById('resolvedIssues').textContent = resolved;
+        }
+
+        function displayIssues() {
+            const container = document.getElementById('issuesList');
+            
+            let filteredIssues = getFilteredIssues();
+            
+            if (filteredIssues.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-8">No issues found</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            filteredIssues.forEach(([key, issue]) => {
+                const issueCard = createIssueCard(issue, key);
+                container.appendChild(issueCard);
+            });
+        }
+
+        function getFilteredIssues() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const categoryFilter = document.getElementById('categoryFilter').value;
+            
+            return Object.entries(issues).filter(([key, issue]) => {
+                const statusMatch = statusFilter === 'all' || issue.status === statusFilter;
+                const categoryMatch = categoryFilter === 'all' || issue.category === categoryFilter;
+                return statusMatch && categoryMatch;
+            }).sort(([,a], [,b]) => new Date(b.reportedAt) - new Date(a.reportedAt));
+        }
+
+        function createIssueCard(issue, issueKey) {
+            const card = document.createElement('div');
+            card.className = 'issue-card bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
+            
+            const statusClass = `status-${issue.status}`;
+            const categoryIcon = getCategoryIcon(issue.category);
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex items-center">
+                        <i class="${categoryIcon} text-blue-600 mr-2"></i>
+                        <h3 class="text-lg font-semibold text-gray-900">${issue.title}</h3>
+                    </div>
+                    <span class="px-2 py-1 text-xs font-medium rounded-full ${statusClass}">
+                        ${issue.status.replace('-', ' ').toUpperCase()}
+                    </span>
+                </div>
+                <p class="text-gray-600 mb-3">${issue.aiSummary || issue.description.substring(0, 100)}...</p>
+                <div class="flex items-center text-sm text-gray-500 mb-3">
+                    <i class="fas fa-user mr-1"></i>
+                    <span class="mr-4">${issue.reportedBy.split('@')[0]}</span>
+                    <i class="fas fa-map-marker-alt mr-1"></i>
+                    <span class="mr-4">${issue.location}</span>
+                    <i class="fas fa-clock mr-1"></i>
+                    <span>${formatDate(issue.reportedAt)}</span>
+                </div>
+                ${issue.imageUrl ? `<div class="mb-3">
+                    <img src="${issue.imageUrl}" alt="Issue image" class="w-full h-48 object-cover rounded-md">
+                </div>` : ''}
+                ${issue.resolutionNote ? `<div class="bg-green-50 p-3 rounded-md">
+                    <p class="text-sm text-green-800"><strong>Resolution:</strong> ${issue.resolutionNote}</p>
+                </div>` : ''}
+                ${currentUser && currentUser.uid === issue.reportedByUid ? `<div class="mt-3 text-xs text-blue-600">
+                    <i class="fas fa-user-check mr-1"></i>Your Report
+                </div>` : ''}
+            `;
+            
+            return card;
+        }
+
+        function getCategoryIcon(category) {
+            const icons = {
+                water: 'fas fa-tint',
+                road: 'fas fa-road',
+                electricity: 'fas fa-bolt',
+                garbage: 'fas fa-trash',
+                other: 'fas fa-exclamation-triangle'
+            };
+            return icons[category] || icons.other;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function filterIssues() {
+            displayIssues();
+        }
+
+        function clearFilters() {
+            document.getElementById('statusFilter').value = 'all';
+            document.getElementById('categoryFilter').value = 'all';
+            displayIssues();
+        }
+
+        function loadAdminDashboard() {
+            if (!currentUser || currentUser.role !== 'admin' || !currentUser.emailVerified) {
+                showNotification('Admin access required with verified email', 'error');
+                showView('dashboard');
+                return;
+            }
+            
+            displayAdminIssues();
+            createCharts();
+        }
+
+        function displayAdminIssues() {
+            const container = document.getElementById('adminIssuesList');
+            
+            const issueArray = Object.entries(issues).sort(([,a], [,b]) => new Date(b.reportedAt) - new Date(a.reportedAt));
+            
+            if (issueArray.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-8">No issues found</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            issueArray.forEach(([key, issue]) => {
+                const issueCard = createAdminIssueCard(issue, key);
+                container.appendChild(issueCard);
+            });
+        }
+
+        function createAdminIssueCard(issue, issueKey) {
+            const card = document.createElement('div');
+            card.className = 'bg-white border border-gray-200 rounded-lg p-4 mb-4';
+            
+            const statusClass = `status-${issue.status}`;
+            const categoryIcon = getCategoryIcon(issue.category);
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex items-center">
+                        <i class="${categoryIcon} text-blue-600 mr-2"></i>
+                        <h3 class="text-lg font-semibold text-gray-900">${issue.title}</h3>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2 py-1 text-xs font-medium rounded-full ${statusClass}">
+                            ${issue.status.replace('-', ' ').toUpperCase()}
+                        </span>
+                        <button onclick="showUpdateModal('${issueKey}')" class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                            <i class="fas fa-edit mr-1"></i>Update
+                        </button>
+                    </div>
+                </div>
+                <p class="text-gray-600 mb-3">${issue.description}</p>
+                <div class="flex items-center text-sm text-gray-500 mb-3">
+                    <i class="fas fa-user mr-1"></i>
+                    <span class="mr-4">${issue.reportedBy}</span>
+                    <i class="fas fa-map-marker-alt mr-1"></i>
+                    <span class="mr-4">${issue.location}</span>
+                    <i class="fas fa-clock mr-1"></i>
+                    <span>${formatDate(issue.reportedAt)}</span>
+                </div>
+                ${issue.imageUrl ? `<div class="mb-3">
+                    <img src="${issue.imageUrl}" alt="Issue image" class="w-full h-48 object-cover rounded-md">
+                </div>` : ''}
+                ${issue.resolutionNote ? `<div class="bg-green-50 p-3 rounded-md">
+                    <p class="text-sm text-green-800"><strong>Resolution:</strong> ${issue.resolutionNote}</p>
+                </div>` : ''}
+            `;
+            
+            return card;
+        }
+
+        function showUpdateModal(issueKey) {
+            if (!currentUser || !currentUser.emailVerified) {
+                showNotification('Email verification required to update issues', 'error');
+                return;
+            }
+
+            currentIssueId = issueKey;
+            const issue = issues[issueKey];
+            
+            document.getElementById('updateStatus').value = issue.status;
+            document.getElementById('updateNote').value = issue.resolutionNote || '';
+            document.getElementById('updateModal').classList.remove('hidden');
+            document.getElementById('aiMessage').classList.add('hidden');
+        }
+
+        function hideUpdateModal() {
+            document.getElementById('updateModal').classList.add('hidden');
+            currentIssueId = null;
+        }
+
+        async function handleUpdateSubmit(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !currentUser.emailVerified) {
+                showNotification('Email verification required to update issues', 'error');
+                return;
+            }
+            
+            const status = document.getElementById('updateStatus').value;
+            const note = document.getElementById('updateNote').value;
+            const issue = issues[currentIssueId];
+            const oldStatus = issue.status;
+
+            // Show loading
+            document.getElementById('updateLoading').classList.remove('hidden');
+            document.getElementById('updateIssueBtn').disabled = true;
+
+            try {
+                // Update issue in Firebase
+                const { ref, update } = window.firebaseRefs;
+                const updates = {
+                    [`issues/${currentIssueId}/status`]: status,
+                    [`issues/${currentIssueId}/resolutionNote`]: note,
+                    [`issues/${currentIssueId}/updatedAt`]: new Date().toISOString()
+                };
+                
+                await update(ref(window.database), updates);
+
+                // Send status update email if status changed
+                if (oldStatus !== status) {
+                    await sendStatusUpdateEmail(issue.reportedBy, {...issue, resolutionNote: note}, currentIssueId, oldStatus, status);
+                }
+
+                hideUpdateModal();
+                showNotification('Issue updated successfully! Email notification sent.', 'success');
+            } catch (error) {
+                console.error('Error updating issue:', error);
+                showNotification('Error updating issue: ' + error.message, 'error');
+            } finally {
+                document.getElementById('updateLoading').classList.add('hidden');
+                document.getElementById('updateIssueBtn').disabled = false;
+            }
+        }
+
+        function generateAIMessage() {
+            const status = document.getElementById('updateStatus').value;
+            const issue = issues[currentIssueId];
+            
+            let message = '';
+            
+            if (status === 'in-progress') {
+                message = `Dear ${issue.reportedBy.split('@')[0]}, Thank you for reporting "${issue.title}". Our technical team has been assigned to address this issue. We will keep you updated on the progress and expected completion timeline.`;
+            } else if (status === 'resolved') {
+                message = `Dear ${issue.reportedBy.split('@')[0]}, We're pleased to inform you that the issue "${issue.title}" has been successfully resolved. Thank you for helping us improve our village infrastructure. Your participation makes our community stronger.`;
+            } else {
+                message = `Dear ${issue.reportedBy.split('@')[0]}, We have received your report about "${issue.title}" and it is currently under review by our team. We will update you soon with the action plan.`;
+            }
+            
+            document.getElementById('aiMessageText').textContent = message;
+            document.getElementById('aiMessage').classList.remove('hidden');
+            document.getElementById('updateNote').value = message;
+        }
+
+        function createCharts() {
+            // Destroy existing charts if they exist
+            if (statusChart) {
+                statusChart.destroy();
+            }
+            if (categoryChart) {
+                categoryChart.destroy();
+            }
+
+            setTimeout(() => {
+                createStatusChart();
+                createCategoryChart();
+            }, 100);
+        }
+
+        function createStatusChart() {
+            const ctx = document.getElementById('statusChart');
+            if (!ctx) return;
+
+            const issueArray = Object.values(issues);
+            const pending = issueArray.filter(issue => issue.status === 'pending').length;
+            const inProgress = issueArray.filter(issue => issue.status === 'in-progress').length;
+            const resolved = issueArray.filter(issue => issue.status === 'resolved').length;
+            
+            statusChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Pending', 'In Progress', 'Resolved'],
+                    datasets: [{
+                        data: [pending, inProgress, resolved],
+                        backgroundColor: ['#fbbf24', '#3b82f6', '#10b981']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Issues by Status'
+                        }
+                    }
+                }
+            });
+        }
+
+        function createCategoryChart() {
+            const ctx = document.getElementById('categoryChart');
+            if (!ctx) return;
+
+            const issueArray = Object.values(issues);
+            const categories = ['water', 'road', 'electricity', 'garbage', 'other'];
+            const data = categories.map(cat => 
+                issueArray.filter(issue => issue.category === cat).length
+            );
+            
+            categoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: categories.map(cat => cat.charAt(0).toUpperCase() + cat.slice(1)),
+                    datasets: [{
+                        label: 'Issues',
+                        data: data,
+                        backgroundColor: '#3b82f6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Issues by Category'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+                type === 'success' ? 'bg-green-500' : 
+                type === 'error' ? 'bg-red-500' : 
+                'bg-blue-500'
+            } text-white max-w-md`;
+            
+            notification.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-3 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Make showUpdateModal globally accessible
+        window.showUpdateModal = showUpdateModal;
+    </script>
+</body>
+</html>
