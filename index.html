@@ -656,7 +656,7 @@
                     .filter(([_, issue]) => issue.status === 'pending' && issue.reportedBy === email)
                     .map(([id, issue]) => `• ${issue.title} (#${id})`).join('\n');
 
-                const params = {
+                let params = {
                     to_email: email,
                     user_name: email.split('@')[0],
                     isNewIssue: false,
@@ -1010,7 +1010,7 @@
                     imageUrl = await getDownloadURL(snapshot.ref);
                 }
 
-                const newIssue = {
+                let newIssue = {
                     title: title,
                     description: description,
                     category: category || getAICategory(description),
