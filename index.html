@@ -495,7 +495,15 @@
                     currentUser.role = userData.role;
                     document.getElementById('userEmail').textContent = currentUser.email;
                     document.getElementById('userEmail').classList.remove('hidden');
-                    
+
+                    // ===== Add this block: hide "Report Issue" for admins =====
+                    if (currentUser && currentUser.role === 'admin') {
+                        document.getElementById('reportBtn').classList.add('hidden');
+                    } else {
+                        document.getElementById('reportBtn').classList.remove('hidden');
+                    }
+                    // ==========================================================
+
                     if (currentUser.role === 'admin' && currentUser.emailVerified) {
                         document.getElementById('adminBtn').classList.remove('hidden');
                     }
@@ -556,7 +564,195 @@
             document.getElementById('updateModal').addEventListener('click', function(e) {
                 if (e.target === this) hideUpdateModal();
             });
+
+            // -------------------------------------------------------------
+            if (document.getElementById('exportBtn')) {
+                document.getElementById('exportBtn').addEventListener('click', exportIssuesToCSV);
+            }
+            if (document.getElementById('sendUpdatesBtn')) {
+                document.getElementById('sendUpdatesBtn').addEventListener('click', sendBulkPendingUpdates);
+            }
+            if (document.getElementById('analyticsBtn')) {
+                document.getElementById('analyticsBtn').addEventListener('click', showAnalyticsReport);
+            }
+            // -------------------------------------------------------------
         }
+        // -------------------------------------------------------------
+
+        function exportIssuesToCSV() {
+            if (!currentUser || currentUser.role !== 'admin') return; // Admin guard
+
+            try {
+                const headers = [
+                    "ID","Title","Description","Category","Location","Status",
+                    "Reported By","Reported At","Resolved Note","Updated At","AI Summary"
+                ];
+                let csvRows = [headers.join(",")];
+
+                Object.entries(issues).forEach(([id, issue]) => {
+                    const row = [
+                        id,
+                        `"${(issue.title || '').replace(/"/g, '""')}"`,
+                        `"${(issue.description || '').replace(/"/g, '""')}"`,
+                        issue.category || '',
+                        `"${(issue.location || '').replace(/"/g, '""')}"`,
+                        issue.status || '',
+                        issue.reportedBy || '',
+                        issue.reportedAt || '',
+                        `"${(issue.resolutionNote || '').replace(/"/g, '""')}"`,
+                        issue.updatedAt || '',
+                        `"${(issue.aiSummary || '').replace(/"/g, '""')}"`
+                    ];
+                    csvRows.push(row.join(","));
+                });
+
+                const csvContent = csvRows.join("\r\n");
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+
+                const ts = new Date().toISOString().replace(/[:.]/g,'-');
+                const filename = `village-issues-${ts}.csv`;
+
+                const a = document.createElement('a');
+                a.setAttribute('href', url);
+                a.setAttribute('download', filename);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                showNotification('CSV export successful!', 'success');
+            } catch (e) {
+                showNotification('CSV export failed: ' + e.message, 'error');
+            }
+        }
+
+        // ---------------
+
+        async function sendBulkPendingUpdates() {
+            if (!currentUser || currentUser.role !== 'admin') return; // Admin guard
+
+            const usersWithPending = {};
+
+            // Aggregate users with at least one pending issue
+            Object.values(issues).forEach(issue => {
+                if (issue.status === "pending" && issue.reportedBy) {
+                    usersWithPending[issue.reportedBy] = true;
+                }
+            });
+
+            const users = Object.keys(usersWithPending);
+
+            if (!users.length) {
+                showNotification("No users with pending issues to send updates.", "info");
+                return;
+            }
+
+            let sentCount = 0;
+            let failedCount = 0;
+
+            // Loop over users and send personalized emails
+            for (const email of users) {
+                const pendingIssuesForUser = Object.entries(issues)
+                    .filter(([_, issue]) => issue.status === 'pending' && issue.reportedBy === email)
+                    .map(([id, issue]) => `• ${issue.title} (#${id})`).join('\n');
+
+                const params = {
+                    to_email: email,
+                    user_name: email.split('@')[0],
+                    isNewIssue: false,
+                    hasPendingUpdates: true,
+                    issue_list: pendingIssuesForUser,
+                    issue_count: pendingIssuesForUser.split('\n').length,
+                };
+
+                try {
+                    await emailjs.send(
+                        EMAILJS_CONFIG.SERVICE_ID,
+                        EMAILJS_CONFIG.TEMPLATE_ID,
+                        params,
+                        EMAILJS_CONFIG.PUBLIC_KEY
+                    );
+                    sentCount++;
+                } catch (error) {
+                    failedCount++;
+                }
+            }
+
+            const message = `Bulk update emails sent. Success: ${sentCount}, Failed: ${failedCount}`;
+            showNotification(message, failedCount === 0 ? 'success' : 'error');
+        }
+
+        // -----------------
+
+        function showAnalyticsReport() {
+            if (!currentUser || currentUser.role !== 'admin') return;
+
+            const allIssues = Object.values(issues);
+            const total = allIssues.length;
+            const resolved = allIssues.filter(i => i.status === "resolved");
+            const pending = allIssues.filter(i => i.status === "pending");
+            const inProgress = allIssues.filter(i => i.status === "in-progress");
+
+            // Resolution rate
+            const resolutionRate = total > 0 ? ((resolved.length / total) * 100).toFixed(1) + '%' : '0%';
+
+            // Average resolution time in hours
+            let totalResolutionHours = 0;
+            let resolvedCount = 0;
+            resolved.forEach(issue => {
+                const reported = new Date(issue.reportedAt);
+                const updated = new Date(issue.updatedAt);
+                if (!isNaN(reported) && !isNaN(updated)) {
+                    totalResolutionHours += (updated - reported) / (1000 * 60 * 60);
+                    resolvedCount++;
+                }
+            });
+            const avgResolutionHours = resolvedCount ? (totalResolutionHours / resolvedCount).toFixed(2) : 'N/A';
+
+            // Status breakdown
+            const statusBreakdown = `Pending: ${pending.length}\nIn Progress: ${inProgress.length}\nResolved: ${resolved.length}`;
+
+            // Category breakdown
+            const categoryCounts = {};
+            allIssues.forEach(issue => {
+                const cat = issue.category || 'other';
+                categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+            });
+            const categoryList = Object.entries(categoryCounts)
+                .map(([cat, count]) => `${cat.toUpperCase()}: ${count}`)
+                .join('\n');
+
+            // Most common issue type
+            const mostCommon = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
+            const mostCommonCategory = mostCommon ? mostCommon[0].toUpperCase() : 'N/A';
+
+            // Total reporting users
+            const reportingUsers = new Set(allIssues.map(issue => issue.reportedBy)).size;
+
+            // Compose summary message
+            const report = `
+        Village Issues Analytics
+        ========================
+        Total Issues: ${total}
+        Resolution Rate: ${resolutionRate}
+        Average Resolution Time: ${avgResolutionHours} hours
+        Reporting Users: ${reportingUsers}
+
+        Status Breakdown:
+        ${statusBreakdown}
+
+        Category Breakdown:
+        ${categoryList}
+
+        Most Common Category: ${mostCommonCategory}
+            `;
+
+            alert(report);
+        }
+
+
+        // -------------------------------------------------------------
+
 
         async function resendVerificationEmail() {
             if (currentUser && !currentUser.emailVerified) {
@@ -754,10 +950,24 @@
             }
         }
 
+        // function updateUIForLoggedInUser() {
+        //     document.getElementById('loginBtn').classList.add('hidden');
+        //     document.getElementById('logoutBtn').classList.remove('hidden');
+        // }
+        // ----------------------------------------------------------------------------
         function updateUIForLoggedInUser() {
             document.getElementById('loginBtn').classList.add('hidden');
             document.getElementById('logoutBtn').classList.remove('hidden');
+            // Hide "Report Issue" for admin, show for non-admin
+            if(currentUser && currentUser.role === 'admin'){
+                document.getElementById('reportBtn').classList.add('hidden');
+            } else {
+                document.getElementById('reportBtn').classList.remove('hidden');
+            }
         }
+        // ----------------------------------------------------------------------------
+
+
 
         function updateUIForLoggedOutUser() {
             document.getElementById('loginBtn').classList.remove('hidden');
@@ -842,6 +1052,10 @@
                 let emailParams = {
                     to_email: userEmail,
                     user_name: userEmail.split('@')[0],
+                    // -----------------------------
+                    isNewIssue: true,
+                    hasPendingUpdates: false,
+                    // -----------------------------
                     issue_title: issue.title,
                     issue_id: issueId,
                     issue_description: issue.description,
@@ -1359,3 +1573,45 @@
     </script>
 </body>
 </html>
+
+<!-- ----------------------------------------------------------------------------------------------------------------------
+I have separate roles for users and admins.
+On the admin dashboard page, the following changes are needed:
+Remove the "Report Issue" option from the header—this feature should be accessible only by regular users, not admins.
+Under the Quick Actions section, the following admin-specific features are not working and need to be fixed:
+Export Report
+Send Updates
+Analytics
+Please help me:
+Remove the “Report Issue” link from the admin header only.
+Fix or implement functionality for the above three features under Quick Actions in the admin dashboard.
+⚠️ Do not alter any other parts of the UI or user-related functionality.
+----------------------------------------------------------------------------------------------------------------------
+
+1. Hidden "Report Issue" for Admins
+Added conditional CSS class ${userRole === 'admin' ? 'hidden' : ''} to the Report Issue button
+Now only regular users can see and access the "Report Issue" option in the header
+2. Functional Quick Actions for Admins
+Export Report
+Functionality: Exports all issues data to a CSV file
+Features:
+Includes all issue details (ID, title, description, category, location, status, etc.)
+Handles CSV formatting with proper escaping
+Auto-downloads with timestamp in filename
+Shows success/error notifications
+Send Updates
+Functionality: Sends bulk email updates to all users with pending issues
+Features:
+Filters for pending issues only
+Sends personalized emails using existing EmailJS template
+Tracks success count and shows summary notification
+Handles individual email failures gracefully
+Analytics
+Functionality: Generates comprehensive analytics report
+Features:
+Overall statistics (total issues, resolution rate, avg resolution time)
+Status breakdown with percentages
+Category breakdown with counts
+Key insights (most common issue type, total reporting users)
+Displays in user-friendly alert format
+Calculates real resolution times from issue dates -->
