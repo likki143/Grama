@@ -349,9 +349,9 @@
                         <button id="exportBtn" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">
                             <i class="fas fa-download mr-2"></i>Export Report
                         </button>
-                        <button id="sendUpdatesBtn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">
+                        <!-- <button id="sendUpdatesBtn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">
                             <i class="fas fa-bell mr-2"></i>Send Updates
-                        </button>
+                        </button> -->
                         <button id="analyticsBtn" class="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700">
                             <i class="fas fa-chart-bar mr-2"></i>Analytics
                         </button>
@@ -628,59 +628,59 @@
 
         // ---------------
 
-        async function sendBulkPendingUpdates() {
-            if (!currentUser || currentUser.role !== 'admin') return; // Admin guard
+        // async function sendBulkPendingUpdates() {
+        //     if (!currentUser || currentUser.role !== 'admin') return; // Admin guard
 
-            let usersWithPending = {};
+        //     let usersWithPending = {};
 
-            // Aggregate users with at least one pending issue
-            Object.values(issues).forEach(issue => {
-                if (issue.status === "pending" && issue.reportedBy) {
-                    usersWithPending[issue.reportedBy] = true;
-                }
-            });
+        //     // Aggregate users with at least one pending issue
+        //     Object.values(issues).forEach(issue => {
+        //         if (issue.status === "pending" && issue.reportedBy) {
+        //             usersWithPending[issue.reportedBy] = true;
+        //         }
+        //     });
 
-            let users = Object.keys(usersWithPending);
+        //     let users = Object.keys(usersWithPending);
 
-            if (!users.length) {
-                showNotification("No users with pending issues to send updates.", "info");
-                return;
-            }
+        //     if (!users.length) {
+        //         showNotification("No users with pending issues to send updates.", "info");
+        //         return;
+        //     }
 
-            let sentCount = 0;
-            let failedCount = 0;
+        //     let sentCount = 0;
+        //     let failedCount = 0;
 
-            // Loop over users and send personalized emails
-            for (let email of users) {
-                let pendingIssuesForUser = Object.entries(issues)
-                    .filter(([_, issue]) => issue.status === 'pending' && issue.reportedBy === email)
-                    .map(([id, issue]) => `• ${issue.title} (#${id})`).join('\n');
+        //     // Loop over users and send personalized emails
+        //     for (let email of users) {
+        //         let pendingIssuesForUser = Object.entries(issues)
+        //             .filter(([_, issue]) => issue.status === 'pending' && issue.reportedBy === email)
+        //             .map(([id, issue]) => `• ${issue.title} (#${id})`).join('\n');
 
-                let params = {
-                    to_email: email,
-                    user_name: email.split('@')[0],
-                    isNewIssue: false,
-                    hasPendingUpdates: true,
-                    issue_list: pendingIssuesForUser,
-                    issue_count: pendingIssuesForUser.split('\n').length,
-                };
+        //         let params = {
+        //             to_email: email,
+        //             user_name: email.split('@')[0],
+        //             isNewIssue: false,
+        //             hasPendingUpdates: true,
+        //             issue_list: pendingIssuesForUser,
+        //             issue_count: pendingIssuesForUser.split('\n').length,
+        //         };
 
-                try {
-                    await emailjs.send(
-                        EMAILJS_CONFIG.SERVICE_ID,
-                        EMAILJS_CONFIG.TEMPLATE_ID,
-                        params,
-                        EMAILJS_CONFIG.PUBLIC_KEY
-                    );
-                    sentCount++;
-                } catch (error) {
-                    failedCount++;
-                }
-            }
+        //         try {
+        //             await emailjs.send(
+        //                 EMAILJS_CONFIG.SERVICE_ID,
+        //                 EMAILJS_CONFIG.TEMPLATE_ID,
+        //                 params,
+        //                 EMAILJS_CONFIG.PUBLIC_KEY
+        //             );
+        //             sentCount++;
+        //         } catch (error) {
+        //             failedCount++;
+        //         }
+        //     }
 
-            let message = `Bulk update emails sent. Success: ${sentCount}, Failed: ${failedCount}`;
-            showNotification(message, failedCount === 0 ? 'success' : 'error');
-        }
+        //     let message = `Bulk update emails sent. Success: ${sentCount}, Failed: ${failedCount}`;
+        //     showNotification(message, failedCount === 0 ? 'success' : 'error');
+        // }
 
         // -----------------
 
@@ -1053,8 +1053,8 @@
                     to_email: userEmail,
                     user_name: userEmail.split('@')[0],
                     // -----------------------------
-                    isNewIssue: true,
-                    hasPendingUpdates: false,
+                    // isNewIssue: true,
+                    // hasPendingUpdates: false,
                     // -----------------------------
                     issue_title: issue.title,
                     issue_id: issueId,
@@ -1062,6 +1062,7 @@
                     issue_location: issue.location,
                     issue_category: issue.category,
                     submit_date: new Date().toLocaleDateString()
+
                 };
 
                 await emailjs.send(
